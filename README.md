@@ -1,5 +1,7 @@
 # ⏰ Chronos
 
+<img width="1171" height="325" alt="chronos" src="https://github.com/user-attachments/assets/ea9ff1c6-2d7c-4435-8411-280dc0834f5c" />
+
 > A beautiful TUI application for converting decimal hours to HH:MM format in CSV and XLSX files.
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
