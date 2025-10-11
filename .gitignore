@@ -33,5 +33,7 @@ go.work.sum
 
 # Test Files
 *.csv
+*.xlsx
+
 # Added by goreleaser init:
 dist/
