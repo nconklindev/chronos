@@ -159,7 +159,12 @@ func ConvertXLSX(inputFile, outputFile string, columnIndices []int) (*types.Conv
 		return nil, fmt.Errorf("empty XLSX file")
 	}
 
-	headers := rows[0]
+	headerRowIdx := findHeaderRow(rows)
+	if headerRowIdx == -1 {
+		return nil, fmt.Errorf("could not find header row")
+	}
+
+	headers := rows[headerRowIdx]
 	colMap := make(map[int]bool)
 	var convertedCols []string
 
@@ -172,7 +177,7 @@ func ConvertXLSX(inputFile, outputFile string, columnIndices []int) (*types.Conv
 
 	// Convert specified columns
 	rowsProcessed := 0
-	for rowIdx := 2; rowIdx <= len(rows); rowIdx++ {
+	for rowIdx := headerRowIdx + 2; rowIdx <= len(rows); rowIdx++ {
 		for colIdx := range colMap {
 			cellName, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx)
 			cellValue, _ := f.GetCellValue(sheetName, cellName)
@@ -243,6 +248,7 @@ func readXLSXData(filePath string) (*types.FileData, error) {
 	defer f.Close()
 
 	sheetName := f.GetSheetName(0)
+
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
 		return nil, err
@@ -252,8 +258,62 @@ func readXLSXData(filePath string) (*types.FileData, error) {
 		return nil, fmt.Errorf("empty file")
 	}
 
+	// Find the header row (first row with multiple non-empty cells)
+	headerRowIdx := findHeaderRow(rows)
+	if headerRowIdx == -1 {
+		return nil, fmt.Errorf("could not find header row")
+	}
+
 	return &types.FileData{
-		Headers: rows[0],
-		Rows:    rows[1:],
+		Headers:   rows[headerRowIdx],
+		Rows:      rows[headerRowIdx+1:],
+		HeaderRow: headerRowIdx,
 	}, nil
+}
+
+// findHeaderRow locates the first row that appears to be a header
+// by finding the row with the most non-empty text cells
+func findHeaderRow(rows [][]string) int {
+	maxNonEmpty := 0
+	headerIdx := -1
+
+	// Look at first 20 rows max
+	searchLimit := len(rows)
+	if searchLimit > 20 {
+		searchLimit = 20
+	}
+
+	for i := 0; i < searchLimit; i++ {
+		nonEmptyCount := 0
+		hasText := false
+
+		for _, cell := range rows[i] {
+			trimmed := strings.TrimSpace(cell)
+			if trimmed != "" {
+				nonEmptyCount++
+				// Check if cell contains actual text (not just numbers or symbols)
+				if containsLetters(trimmed) {
+					hasText = true
+				}
+			}
+		}
+
+		// Header should have multiple columns AND contain text
+		if nonEmptyCount >= 2 && hasText && nonEmptyCount > maxNonEmpty {
+			maxNonEmpty = nonEmptyCount
+			headerIdx = i
+		}
+	}
+
+	return headerIdx
+}
+
+// containsLetters checks if a string contains any alphabetic characters
+func containsLetters(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return true
+		}
+	}
+	return false
 }
