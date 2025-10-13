@@ -39,7 +39,7 @@ tar -xzf chronos_Linux_x86_64.tar.gz
 sudo mv chronos /usr/local/bin/
 ```
 
-### 🍺 Homebrew
+##### 🍺 Homebrew
 
 ```bash
 brew install --cask nconklindev/tap/chronos
@@ -53,7 +53,7 @@ tar -xzf chronos_Darwin_x86_64.tar.gz
 sudo mv chronos /usr/local/bin/
 ```
 
-### 🍺 Homebrew
+##### 🍺 Homebrew
 
 ```bash
 brew install --cask nconklindev/tap/chronos
@@ -63,7 +63,7 @@ brew install --cask nconklindev/tap/chronos
 
 Download `chronos_Windows_x86_64.zip` from the releases page, extract it, and add the executable to your PATH.
 
-### Chocolatey
+##### 🍫 Chocolatey
 
 ```powershell
 
