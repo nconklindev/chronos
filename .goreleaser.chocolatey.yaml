@@ -29,6 +29,7 @@ archives:
 
 chocolateys:
   - owners: nconklindev
+    authors: nconklindev
     title: Chronos
     project_url: https://github.com/nconklindev/chronos
     license_url: https://github.com/nconklindev/chronos/blob/main/LICENSE
