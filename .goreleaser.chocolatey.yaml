@@ -2,6 +2,31 @@ version: 2
 
 project_name: chronos
 
+# Minimal build - just Windows for Chocolatey
+builds:
+  - id: chronos
+    binary: chronos
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+# Only create Windows archives
+archives:
+  - id: default
+    formats: ["zip"]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64{{ end }}
+
 chocolateys:
   - owners: nconklindev
     title: Chronos
@@ -15,3 +40,7 @@ chocolateys:
       Chronos is a beautiful TUI application for converting decimal hours to HH:MM format in CSV and XLSX files.
     api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
     source_repo: "https://push.chocolatey.org/"
+
+# Disable GitHub release creation (already done by main job)
+release:
+  skip_upload: true
