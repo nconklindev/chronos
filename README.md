@@ -55,13 +55,6 @@ brew install --cask nconklindev/tap/chronos
 
 Download `chronos_Windows_x86_64.zip` from the releases page, extract it, and add the executable to your PATH.
 
-##### 🍫 Chocolatey
-
-```powershell
-# Chocolatey
-choco install chronos
-```
-
 ### Build from Source
 
 Requires Go 1.21 or higher.

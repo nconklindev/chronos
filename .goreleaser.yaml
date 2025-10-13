@@ -98,29 +98,7 @@ release:
   header: |
     ## ⏰ Chronos {{ .Version }}
 
-    Welcome to this new release!
   footer: |
     ---
 
     **Full Changelog**: https://github.com/nconklindev/chronos/compare/{{ .PreviousTag }}...{{ .Tag }}
-
-    ## Installation
-
-    ### Windows
-    ```powershell
-
-    # Chocolatey
-    choco install chronos
-    ```
-
-    ### macOS
-    ```bash
-    # Homebrew
-    brew install nconklindev/tap/chronos
-    ```
-
-    ### Linux
-    ```bash
-    # Homebrew
-    brew install nconklindev/tap/chronos
-    ```
