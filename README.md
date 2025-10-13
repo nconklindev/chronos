@@ -7,14 +7,6 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## ⚠️ Unofficial Tool
-
-Hey! I built this on the side to help with one-off cases where a report from BIRT Studio needs its decimal hour columns converted into hh:mm format. But, just so you know:
-
-- This isn't an official UKG tool
-- For a more permanent solution that does not require the use of this tool, please open a Service Request through the [Community](https://community.ukg.com)
-- Issues may be opened, but I make no promises on turnaround time or fixes
-
 ## 🌟 Features
 
 - **Interactive TUI** - Beautiful terminal user interface built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)
