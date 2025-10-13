@@ -66,7 +66,6 @@ Download `chronos_Windows_x86_64.zip` from the releases page, extract it, and ad
 ##### 🍫 Chocolatey
 
 ```powershell
-
 # Chocolatey
 choco install chronos
 ```
