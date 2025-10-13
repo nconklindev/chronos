@@ -1,10 +1,13 @@
 version: 2
 
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"
+
 before:
   hooks:
     # You may remove this if you don't use go modules.
     - go mod tidy
-    # - go generate ./...
+    - go mod download
 
 builds:
   - env:
@@ -20,6 +23,11 @@ builds:
         goarch: 386
       - goos: windows
         goarch: 386
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.CommitDate}}
 
 archives:
   - formats: [tar.gz]
@@ -35,17 +43,96 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
+  use: github
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'New Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Documentation'
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Other Changes'
+      order: 999
+
+homebrew_casks:
+  - repository:
+      owner: nconklindev
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/nconklindev/chronos
+    description: "Convert decimal hours to HH:MM format in CSV and XLSX files"
+    license: MIT
+    name: chronos
+
+chocolateys:
+  - owners: nconklindev
+    title: Chronos
+    project_url: https://github.com/nconklindev/chronos
+    license_url: https://github.com/nconklindev/chronos/blob/main/LICENSE
+    require_license_acceptance: false
+    project_source_url: https://github.com/nconklindev/chronos
+    tags: "cli tui time converter csv excel"
+    summary: "Convert decimal hours to HH:MM format"
+    description: |
+      Chronos is a beautiful TUI application for converting decimal hours to HH:MM format in CSV and XLSX files.
+    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
+    source_repo: "https://push.chocolatey.org/"
 
 release:
-  footer: >-
+  github:
+    owner: nconklindev
+    name: chronos
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## ⏰ Chronos {{ .Version }}
 
+    Welcome to this new release!
+  footer: |
     ---
 
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+    **Full Changelog**: https://github.com/nconklindev/chronos/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ## Installation
+
+    ### Windows
+    ```powershell
+
+    # Chocolatey
+    choco install chronos
+    ```
+
+    ### macOS
+    ```bash
+    # Homebrew
+    brew install nconklindev/tap/chronos
+    ```
+
+    ### Linux
+    ```bash
+    # Homebrew
+    brew install nconklindev/tap/chronos
+    ```
