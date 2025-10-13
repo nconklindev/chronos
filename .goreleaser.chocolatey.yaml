@@ -1,0 +1,17 @@
+version: 2
+
+project_name: chronos
+
+chocolateys:
+  - owners: nconklindev
+    title: Chronos
+    project_url: https://github.com/nconklindev/chronos
+    license_url: https://github.com/nconklindev/chronos/blob/main/LICENSE
+    require_license_acceptance: false
+    project_source_url: https://github.com/nconklindev/chronos
+    tags: "cli tui time converter csv excel"
+    summary: "Convert decimal hours to HH:MM format"
+    description: |
+      Chronos is a beautiful TUI application for converting decimal hours to HH:MM format in CSV and XLSX files.
+    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
+    source_repo: "https://push.chocolatey.org/"
