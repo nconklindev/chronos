@@ -7,6 +7,14 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+## ⚠️ Unofficial Tool
+
+Hey! I built this on the side to help with one-off cases where a report from BIRT Studio needs its decimal hour columns converted into hh:mm format. But, just so you know:
+
+- This isn't an official UKG tool
+- For a more permanent solution that does not require the use of this tool, please open a Service Request through the [Community](https://community.ukg.com)
+- Issues may be opened, but I make no promises on turnaround time or fixes
+
 ## 🌟 Features
 
 - **Interactive TUI** - Beautiful terminal user interface built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)
@@ -31,6 +39,12 @@ tar -xzf chronos_Linux_x86_64.tar.gz
 sudo mv chronos /usr/local/bin/
 ```
 
+### 🍺 Homebrew
+
+```bash
+brew install --cask nconklindev/tap/chronos
+```
+
 #### macOS
 
 ```bash
@@ -39,9 +53,23 @@ tar -xzf chronos_Darwin_x86_64.tar.gz
 sudo mv chronos /usr/local/bin/
 ```
 
+### 🍺 Homebrew
+
+```bash
+brew install --cask nconklindev/tap/chronos
+```
+
 #### Windows
 
 Download `chronos_Windows_x86_64.zip` from the releases page, extract it, and add the executable to your PATH.
+
+### Chocolatey
+
+```powershell
+
+# Chocolatey
+choco install chronos
+```
 
 ### Build from Source
 
@@ -66,6 +94,9 @@ chronos
 1. **Select File** - Browse your filesystem and select a CSV or XLSX file
 2. **Choose Columns** - Select which columns contain decimal hours (auto-detected by default)
 3. **Convert** - Press Enter to convert and save the file
+
+> [!INFO]
+> On reports in XLSX format that have hidden columns or detail rows hidden, the file picker may pick these up and report them as blank with no name, but selectable. This is normal!
 
 ### Keyboard Controls
 
@@ -158,16 +189,6 @@ go build -o chronos
 # Build for all platforms (requires goreleaser)
 goreleaser build --snapshot --clean
 ```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## 📄 License
 
