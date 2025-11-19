@@ -79,7 +79,7 @@ chronos
 2. **Choose Columns** - Select which columns contain decimal hours (auto-detected by default)
 3. **Convert** - Press Enter to convert and save the file
 
-> [!INFO]
+> [!NOTE]
 > On reports in XLSX format that have hidden columns or detail rows hidden, the file picker may pick these up and report them as blank with no name, but selectable. This is normal!
 
 ### Keyboard Controls
