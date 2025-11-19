@@ -10,6 +10,7 @@ import (
 	"github.com/nconklindev/chronos/internal/types"
 
 	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -31,11 +32,20 @@ type Model struct {
 	fileData     *types.FileData
 	detectedCols []int
 	selectedCols map[int]bool
+	keepOriginal bool
 	cursor       int
 	result       *types.ConversionResult
 	err          error
 	width        int
 	height       int
+	progress     progress.Model
+	progressChan chan float64
+	resultChan   chan conversionResultMsg
+}
+
+type conversionResultMsg struct {
+	result *types.ConversionResult
+	err    error
 }
 
 type fileLoadedMsg struct {
@@ -47,6 +57,10 @@ type conversionCompleteMsg struct {
 	result *types.ConversionResult
 	err    error
 }
+
+type progressMsg float64
+
+type waitForProgressMsg struct{}
 
 func InitialModel() Model {
 	fp := filepicker.New()
@@ -62,10 +76,14 @@ func InitialModel() Model {
 	fp.Styles.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C42")).Bold(true)
 	fp.Styles.FileSize = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
 
+	// Initialize progress bar
+	prog := progress.New(progress.WithGradient("#FF8C42", "#FF9F5A"))
+
 	return Model{
 		state:        stateFilePicker,
 		filepicker:   fp,
 		selectedCols: make(map[int]bool),
+		progress:     prog,
 	}
 }
 
@@ -112,6 +130,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case " ":
 				m.selectedCols[m.cursor] = !m.selectedCols[m.cursor]
+			case "o":
+				m.keepOriginal = !m.keepOriginal
 			case "a":
 				// Select all detected columns
 				for _, idx := range m.detectedCols {
@@ -120,7 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if len(m.selectedCols) > 0 {
 					m.state = stateProcessing
-					return m, m.convertFile()
+					return m.convertFile()
 				}
 			}
 
@@ -157,6 +177,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = msg.result
 		m.state = stateComplete
 		return m, nil
+
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
+
+	case progressMsg:
+		if m.state == stateProcessing {
+			cmd := m.progress.SetPercent(float64(msg))
+			return m, tea.Batch(cmd, waitForProgress(m.progressChan, m.resultChan))
+		}
+		return m, nil
+
+	case waitForProgressMsg:
+		return m, waitForProgress(m.progressChan, m.resultChan)
 	}
 
 	// Handle filepicker updates
@@ -182,30 +217,74 @@ func (m Model) loadFile(path string) tea.Cmd {
 	}
 }
 
-func (m Model) convertFile() tea.Cmd {
-	return func() tea.Msg {
-		var selectedIndices []int
-		for idx := range m.selectedCols {
-			if m.selectedCols[idx] {
-				selectedIndices = append(selectedIndices, idx)
+func (m Model) convertFile() (Model, tea.Cmd) {
+	m.progressChan = make(chan float64, 100)
+	m.resultChan = make(chan conversionResultMsg, 1)
+
+	cmd := tea.Batch(
+		func() tea.Msg {
+			var selectedIndices []int
+			for idx := range m.selectedCols {
+				if m.selectedCols[idx] {
+					selectedIndices = append(selectedIndices, idx)
+				}
 			}
+
+			ext := strings.ToLower(filepath.Ext(m.selectedFile))
+			base := strings.TrimSuffix(m.selectedFile, ext)
+			outputFile := base + "_converted" + ext
+
+			// Capture channels for the goroutine
+			progressChan := m.progressChan
+			resultChan := m.resultChan
+			selectedFile := m.selectedFile
+			keepOriginal := m.keepOriginal
+
+			go func() {
+				var result *types.ConversionResult
+				var err error
+
+				switch ext {
+				case ".csv":
+					result, err = converter.ConvertCSV(selectedFile, outputFile, selectedIndices, keepOriginal, progressChan)
+				case ".xlsx":
+					result, err = converter.ConvertXLSX(selectedFile, outputFile, selectedIndices, keepOriginal, progressChan)
+				}
+
+				// Send result
+				resultChan <- conversionResultMsg{result: result, err: err}
+
+				// Close channels
+				close(progressChan)
+				close(resultChan)
+			}()
+
+			return waitForProgressMsg{}
+		},
+		waitForProgress(m.progressChan, m.resultChan),
+		m.progress.Init(), // Start progress bar animation
+	)
+
+	return m, cmd
+}
+
+func waitForProgress(progressChan chan float64, resultChan chan conversionResultMsg) tea.Cmd {
+	return func() tea.Msg {
+		if progressChan == nil {
+			return nil
 		}
 
-		ext := strings.ToLower(filepath.Ext(m.selectedFile))
-		base := strings.TrimSuffix(m.selectedFile, ext)
-		outputFile := base + "_converted" + ext
-
-		var result *types.ConversionResult
-		var err error
-
-		switch ext {
-		case ".csv":
-			result, err = converter.ConvertCSV(m.selectedFile, outputFile, selectedIndices)
-		case ".xlsx":
-			result, err = converter.ConvertXLSX(m.selectedFile, outputFile, selectedIndices)
+		p, ok := <-progressChan
+		if !ok {
+			// Progress channel closed, check result
+			res, ok := <-resultChan
+			if ok {
+				return conversionCompleteMsg(res)
+			}
+			return nil
 		}
 
-		return conversionCompleteMsg{result: result, err: err}
+		return progressMsg(p)
 	}
 }
 
@@ -292,7 +371,14 @@ func (m Model) viewColumnSelection() string {
 	}
 
 	s.WriteString("\n")
-	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • a: select all detected • enter: convert • q: quit"))
+
+	keepOriginalStatus := "[ ]"
+	if m.keepOriginal {
+		keepOriginalStatus = "[x]"
+	}
+	s.WriteString(fmt.Sprintf("Keep Original Columns: %s\n", keepOriginalStatus))
+	s.WriteString("\n")
+	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: convert • q: quit"))
 
 	return BoxStyle.Render(s.String())
 }
@@ -303,6 +389,8 @@ func (m Model) viewProcessing() string {
 	s.WriteString(TitleStyle.Render("⏰ Processing..."))
 	s.WriteString("\n\n")
 	s.WriteString("Converting decimal hours to HH:MM format...")
+	s.WriteString("\n\n")
+	s.WriteString(m.progress.View())
 
 	return BoxStyle.Render(s.String())
 }
