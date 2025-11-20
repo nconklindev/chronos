@@ -18,23 +18,44 @@ import (
 type state int
 
 const (
+	// stateFilePicker is the initial state where the user selects files to convert.
 	stateFilePicker state = iota
+	// stateLoading is a transitional state while a file is being read from disk.
+	stateLoading
+	// stateColumnSelection is where the user configures which columns to convert for a specific file.
 	stateColumnSelection
+	// stateProcessing indicates that the conversion process is running.
 	stateProcessing
+	// stateComplete is the final state showing the results of the conversion.
 	stateComplete
+	// stateError displays any errors that occurred during the process.
 	stateError
 )
 
+type fileConfig struct {
+	path              string
+	fileData          *types.FileData
+	detectedCols      []int
+	selectedCols      map[int]bool
+	selectableIndices []int
+	keepOriginal      bool
+	cursor            int
+}
+
+// Model holds the application state.
 type Model struct {
-	state        state
-	filepicker   filepicker.Model
-	selectedFile string
-	fileData     *types.FileData
-	detectedCols []int
-	selectedCols map[int]bool
-	keepOriginal bool
-	cursor       int
-	result       *types.ConversionResult
+	state      state
+	filepicker filepicker.Model
+
+	// selectedFiles stores the paths of all files selected by the user.
+	selectedFiles []string
+	// currentFileIndex tracks which file is currently being configured or processed.
+	currentFileIndex int
+	// configs holds the column selection and settings for each selected file.
+	configs []fileConfig
+	// results stores the outcome of each file conversion.
+	results []*types.ConversionResult
+
 	err          error
 	width        int
 	height       int
@@ -65,7 +86,7 @@ type waitForProgressMsg struct{}
 func InitialModel() Model {
 	fp := filepicker.New()
 	fp.AllowedTypes = []string{".csv", ".xlsx"}
-	fp.CurrentDirectory, _ = os.Getwd()
+	fp.CurrentDirectory, _ = os.UserHomeDir()
 
 	// Set filepicker colors to match theme
 	fp.Styles.Cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C42"))
@@ -80,10 +101,11 @@ func InitialModel() Model {
 	prog := progress.New(progress.WithGradient("#FF8C42", "#FF9F5A"))
 
 	return Model{
-		state:        stateFilePicker,
-		filepicker:   fp,
-		selectedCols: make(map[int]bool),
-		progress:     prog,
+		state:         stateFilePicker,
+		filepicker:    fp,
+		selectedFiles: []string{},
+		configs:       []fileConfig{},
+		progress:      prog,
 	}
 }
 
@@ -91,6 +113,7 @@ func (m Model) Init() tea.Cmd {
 	return m.filepicker.Init()
 }
 
+// Update handles incoming events and updates the model state.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -114,67 +137,160 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
+			case " ":
+				// Spacebar is used to select a file. We simulate an Enter keypress
+				// for the filepicker component to trigger its selection logic.
+				enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+
+				var cmd tea.Cmd
+				m.filepicker, cmd = m.filepicker.Update(enterMsg)
+
+				if didSelect, path := m.filepicker.DidSelectFile(enterMsg); didSelect {
+					// Check if file is already selected
+					alreadySelected := false
+					for _, p := range m.selectedFiles {
+						if p == path {
+							alreadySelected = true
+							break
+						}
+					}
+
+					if !alreadySelected && len(m.selectedFiles) < 3 {
+						m.selectedFiles = append(m.selectedFiles, path)
+					}
+					return m, nil
+				}
+				return m, cmd
+			case "enter":
+				// Enter confirms the selection of all files and proceeds to the next step.
+				if len(m.selectedFiles) > 0 {
+					// Start loading the first file to prepare for column selection.
+					m.currentFileIndex = 0
+					m.state = stateLoading
+					return m, m.loadFile(m.selectedFiles[0])
+				}
+			case "backspace", "delete":
+				if len(m.selectedFiles) > 0 {
+					m.selectedFiles = m.selectedFiles[:len(m.selectedFiles)-1]
+				}
 			}
 
 		case stateColumnSelection:
+			config := &m.configs[m.currentFileIndex]
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "up", "k":
-				if m.cursor > 0 {
-					m.cursor--
+				if config.cursor > 0 {
+					config.cursor--
 				}
 			case "down", "j":
-				if m.cursor < len(m.fileData.Headers)-1 {
-					m.cursor++
+				if config.cursor < len(config.selectableIndices)-1 {
+					config.cursor++
 				}
 			case " ":
-				m.selectedCols[m.cursor] = !m.selectedCols[m.cursor]
+				// Toggle selection for the column at the current cursor position
+				colIdx := config.selectableIndices[config.cursor]
+				config.selectedCols[colIdx] = !config.selectedCols[colIdx]
 			case "o":
-				m.keepOriginal = !m.keepOriginal
+				config.keepOriginal = !config.keepOriginal
 			case "a":
 				// Select all detected columns
-				for _, idx := range m.detectedCols {
-					m.selectedCols[idx] = true
+				for _, idx := range config.detectedCols {
+					config.selectedCols[idx] = true
 				}
 			case "enter":
-				if len(m.selectedCols) > 0 {
-					m.state = stateProcessing
-					return m.convertFile()
+				if len(config.selectedCols) > 0 {
+					// If there are more files to configure, load the next one.
+					if m.currentFileIndex < len(m.selectedFiles)-1 {
+						m.currentFileIndex++
+						m.state = stateLoading
+						return m, m.loadFile(m.selectedFiles[m.currentFileIndex])
+					} else {
+						// All files configured, start the batch conversion process.
+						m.state = stateProcessing
+						m.currentFileIndex = 0 // Reset index to start processing from the first file.
+						return m.convertNextFile()
+					}
 				}
 			}
 
 		case stateComplete, stateError:
 			switch msg.String() {
-			case "ctrl+c", "q", "enter", "esc":
+			case "ctrl+c", "q", "esc":
 				return m, tea.Quit
+			case "enter":
+				// Reset to initial state
+				m.state = stateFilePicker
+				m.selectedFiles = []string{}
+				m.configs = []fileConfig{}
+				m.results = []*types.ConversionResult{}
+				m.currentFileIndex = 0
+				m.err = nil
+				return m, nil
 			}
 		}
 
+	// fileLoadedMsg is received when a file has been read from disk.
 	case fileLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err
 			m.state = stateError
 			return m, nil
 		}
-		m.fileData = msg.data
-		m.detectedCols = converter.AutoDetectColumns(msg.data)
 
-		// Auto-select detected columns
-		for _, idx := range m.detectedCols {
-			m.selectedCols[idx] = true
+		// Auto-detect columns that look like decimal hours.
+		detected := converter.AutoDetectColumns(msg.data)
+		selected := make(map[int]bool)
+		for _, idx := range detected {
+			selected[idx] = true
+		}
+
+		// Filter out empty headers
+		var selectable []int
+		for i, header := range msg.data.Headers {
+			if strings.TrimSpace(header) != "" {
+				selectable = append(selectable, i)
+			}
+		}
+
+		// Create a configuration for this file.
+		config := fileConfig{
+			path:              m.selectedFiles[m.currentFileIndex],
+			fileData:          msg.data,
+			detectedCols:      detected,
+			selectedCols:      selected,
+			selectableIndices: selectable,
+			keepOriginal:      false,
+			cursor:            0,
+		}
+
+		// Ensure configs slice is large enough
+		if len(m.configs) <= m.currentFileIndex {
+			m.configs = append(m.configs, config)
+		} else {
+			m.configs[m.currentFileIndex] = config
 		}
 
 		m.state = stateColumnSelection
 		return m, nil
 
+	// conversionCompleteMsg is received when a single file conversion finishes.
 	case conversionCompleteMsg:
 		if msg.err != nil {
 			m.err = msg.err
 			m.state = stateError
 			return m, nil
 		}
-		m.result = msg.result
+		m.results = append(m.results, msg.result)
+
+		// If there are more files in the queue, start converting the next one.
+		if m.currentFileIndex < len(m.selectedFiles)-1 {
+			m.currentFileIndex++
+			return m.convertNextFile()
+		}
+
+		// All files processed.
 		m.state = stateComplete
 		return m, nil
 
@@ -198,18 +314,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.state == stateFilePicker {
 		var cmd tea.Cmd
 		m.filepicker, cmd = m.filepicker.Update(msg)
-
-		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
-			m.selectedFile = path
-			return m, m.loadFile(path)
-		}
-
 		return m, cmd
 	}
 
 	return m, nil
 }
 
+// loadFile reads the file content asynchronously.
 func (m Model) loadFile(path string) tea.Cmd {
 	return func() tea.Msg {
 		data, err := converter.ReadFileData(path)
@@ -217,28 +328,31 @@ func (m Model) loadFile(path string) tea.Cmd {
 	}
 }
 
-func (m Model) convertFile() (Model, tea.Cmd) {
+// convertNextFile starts the conversion process for the current file in the queue.
+func (m Model) convertNextFile() (Model, tea.Cmd) {
 	m.progressChan = make(chan float64, 100)
 	m.resultChan = make(chan conversionResultMsg, 1)
+
+	config := m.configs[m.currentFileIndex]
 
 	cmd := tea.Batch(
 		func() tea.Msg {
 			var selectedIndices []int
-			for idx := range m.selectedCols {
-				if m.selectedCols[idx] {
+			for idx := range config.selectedCols {
+				if config.selectedCols[idx] {
 					selectedIndices = append(selectedIndices, idx)
 				}
 			}
 
-			ext := strings.ToLower(filepath.Ext(m.selectedFile))
-			base := strings.TrimSuffix(m.selectedFile, ext)
+			ext := strings.ToLower(filepath.Ext(config.path))
+			base := strings.TrimSuffix(config.path, ext)
 			outputFile := base + "_converted" + ext
 
 			// Capture channels for the goroutine
 			progressChan := m.progressChan
 			resultChan := m.resultChan
-			selectedFile := m.selectedFile
-			keepOriginal := m.keepOriginal
+			selectedFile := config.path
+			keepOriginal := config.keepOriginal
 
 			go func() {
 				var result *types.ConversionResult
@@ -292,6 +406,8 @@ func (m Model) View() string {
 	switch m.state {
 	case stateFilePicker:
 		return m.viewFilePicker()
+	case stateLoading:
+		return m.viewLoading()
 	case stateColumnSelection:
 		return m.viewColumnSelection()
 	case stateProcessing:
@@ -315,52 +431,70 @@ func (m Model) viewFilePicker() string {
 
 	s.WriteString(lipgloss.JoinVertical(lipgloss.Left, title, byLine))
 	s.WriteString("\n")
-	s.WriteString(SubtitleStyle.Render("Select a CSV or XLSX file to convert"))
+	s.WriteString(SubtitleStyle.Render("Select up to 3 files to convert"))
 	s.WriteString("\n\n")
+
+	// Show selected files
+	if len(m.selectedFiles) > 0 {
+		s.WriteString("Selected Files:\n")
+		for i, file := range m.selectedFiles {
+			s.WriteString(fmt.Sprintf("%d. %s\n", i+1, filepath.Base(file)))
+		}
+		s.WriteString("\n")
+		if len(m.selectedFiles) < 3 {
+			s.WriteString(SubtitleStyle.Render(fmt.Sprintf("(%d/3 selected) Select more or press 'c' to continue", len(m.selectedFiles))))
+		} else {
+			s.WriteString(SuccessStyle.Render("Max files selected. Press 'c' to continue."))
+		}
+		s.WriteString("\n\n")
+	}
+
 	s.WriteString(m.filepicker.View())
 	s.WriteString("\n\n")
-	s.WriteString(HelpStyle.Render("Press q to quit"))
+	s.WriteString(HelpStyle.Render("Space: select file • Enter: confirm selection • Backspace: remove last file • q: quit"))
 
 	return s.String()
 }
 
 func (m Model) viewColumnSelection() string {
 	var s strings.Builder
+	config := m.configs[m.currentFileIndex]
 
 	s.WriteString(TitleStyle.Render("⏰ Select Columns to Convert"))
 	s.WriteString("\n")
-	s.WriteString(SubtitleStyle.Render(fmt.Sprintf("File: %s", filepath.Base(m.selectedFile))))
+	s.WriteString(SubtitleStyle.Render(fmt.Sprintf("File (%d/%d): %s", m.currentFileIndex+1, len(m.selectedFiles), filepath.Base(config.path))))
 	s.WriteString("\n\n")
 
-	if len(m.detectedCols) > 0 {
-		s.WriteString(SuccessStyle.Render(fmt.Sprintf("✓ Auto-detected %d decimal hour column(s)", len(m.detectedCols))))
+	if len(config.detectedCols) > 0 {
+		s.WriteString(SuccessStyle.Render(fmt.Sprintf("✓ Auto-detected %d decimal hour column(s)", len(config.detectedCols))))
 		s.WriteString("\n\n")
 	}
 
-	for i, header := range m.fileData.Headers {
+	for i, colIdx := range config.selectableIndices {
+		header := config.fileData.Headers[colIdx]
 		cursor := " "
-		if m.cursor == i {
+		if config.cursor == i {
 			cursor = ">"
 		}
 
 		checked := " "
-		if m.selectedCols[i] {
+		if config.selectedCols[colIdx] {
 			checked = "✓"
 		}
 
 		line := fmt.Sprintf("%s [%s] %s", cursor, checked, header)
 
 		isDetected := false
-		for _, idx := range m.detectedCols {
-			if idx == i {
+		for _, idx := range config.detectedCols {
+			if idx == colIdx {
 				isDetected = true
 				break
 			}
 		}
 
-		if m.cursor == i {
+		if config.cursor == i {
 			line = SelectedStyle.Render(line)
-		} else if m.selectedCols[i] {
+		} else if config.selectedCols[colIdx] {
 			line = CheckedStyle.Render(line)
 		} else if isDetected {
 			line = UnselectedStyle.Render(line + " (detected)")
@@ -373,14 +507,18 @@ func (m Model) viewColumnSelection() string {
 	s.WriteString("\n")
 
 	keepOriginalStatus := "[ ]"
-	if m.keepOriginal {
+	if config.keepOriginal {
 		keepOriginalStatus = "[x]"
 	}
 	s.WriteString(fmt.Sprintf("Keep Original Columns: %s\n", keepOriginalStatus))
 	s.WriteString("\n")
-	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: convert • q: quit"))
+	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit"))
 
 	return BoxStyle.Render(s.String())
+}
+
+func (m Model) viewLoading() string {
+	return BoxStyle.Render(TitleStyle.Render("Loading file..."))
 }
 
 func (m Model) viewProcessing() string {
@@ -388,7 +526,9 @@ func (m Model) viewProcessing() string {
 
 	s.WriteString(TitleStyle.Render("⏰ Processing..."))
 	s.WriteString("\n\n")
-	s.WriteString("Converting decimal hours to HH:MM format...")
+	s.WriteString(fmt.Sprintf("Converting file %d of %d...", m.currentFileIndex+1, len(m.selectedFiles)))
+	s.WriteString("\n")
+	s.WriteString(filepath.Base(m.configs[m.currentFileIndex].path))
 	s.WriteString("\n\n")
 	s.WriteString(m.progress.View())
 
@@ -407,23 +547,29 @@ func (m Model) viewComplete() string {
 		maxPathLen = 30
 	}
 
-	inputPath := m.result.InputFile
-	if len(inputPath) > maxPathLen {
-		inputPath = "..." + inputPath[len(inputPath)-maxPathLen+3:]
+	for _, res := range m.results {
+		inputPath := res.InputFile
+		if len(inputPath) > maxPathLen {
+			inputPath = "..." + inputPath[len(inputPath)-maxPathLen+3:]
+		}
+
+		outputPath := res.OutputFile
+		if len(outputPath) > maxPathLen {
+			outputPath = "..." + outputPath[len(outputPath)-maxPathLen+3:]
+		}
+
+		s.WriteString(fmt.Sprintf("Input:    %s\n", inputPath))
+		s.WriteString(SuccessStyle.Render(fmt.Sprintf("Output:   %s", outputPath)))
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("Columns:  %s", strings.Join(res.ColumnsFound, ", ")))
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("Rows:     %d", res.RowsProcessed))
+		s.WriteString("\n")
+		s.WriteString("---")
+		s.WriteString("\n\n")
 	}
 
-	outputPath := m.result.OutputFile
-	if len(outputPath) > maxPathLen {
-		outputPath = "..." + outputPath[len(outputPath)-maxPathLen+3:]
-	}
-
-	s.WriteString(fmt.Sprintf("Input:  %s\n", inputPath))
-	s.WriteString(SuccessStyle.Render(fmt.Sprintf("Output: %s\n", outputPath)))
-	s.WriteString("\n")
-	s.WriteString(fmt.Sprintf("Columns converted: %s\n", strings.Join(m.result.ColumnsFound, ", ")))
-	s.WriteString(fmt.Sprintf("Values processed: %d\n", m.result.RowsProcessed))
-	s.WriteString("\n")
-	s.WriteString(HelpStyle.Render("Press any key to exit"))
+	s.WriteString(HelpStyle.Render("Press Enter to convert more files or q to quit"))
 
 	return BoxStyle.Render(s.String())
 }
