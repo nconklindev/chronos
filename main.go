@@ -22,7 +22,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	p := tea.NewProgram(ui.InitialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(ui.InitialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
