@@ -515,6 +515,20 @@ func (m Model) viewColumnSelection() string {
 	s.WriteString(m.viewport.View())
 	s.WriteString("\n\n")
 
+	// Show scroll position indicator
+	totalCols := len(config.selectableIndices)
+	visibleStart := m.viewport.YOffset + 1
+	visibleEnd := m.viewport.YOffset + m.viewport.Height
+	if visibleEnd > totalCols {
+		visibleEnd = totalCols
+	}
+	if visibleStart > totalCols {
+		visibleStart = totalCols
+	}
+	scrollInfo := SubtitleStyle.Render(fmt.Sprintf("Viewing %d-%d of %d columns", visibleStart, visibleEnd, totalCols))
+	s.WriteString(scrollInfo)
+	s.WriteString("\n\n")
+
 	keepOriginalStatus := "[ ]"
 	if config.keepOriginal {
 		keepOriginalStatus = "[x]"
@@ -523,7 +537,7 @@ func (m Model) viewColumnSelection() string {
 	s.WriteString("\n")
 	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit"))
 
-	return BoxStyle.Render(s.String())
+	return s.String()
 }
 
 func (m *Model) updateViewportContent() {
