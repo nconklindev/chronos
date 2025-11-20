@@ -45,10 +45,6 @@ sudo mv chronos /usr/local/bin/
 brew install --cask nconklindev/tap/chronos
 
 ## 🚀 Usage
-
-Simply run the application:
-
-```bash
 chronos
 ```
 
