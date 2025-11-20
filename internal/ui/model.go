@@ -124,22 +124,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		// Set filepicker height based on available space
-		// Subtract space for title, subtitle, help text, and padding
-		height := msg.Height - 14
+		// Build the viewport chrome to measure actual height needed
+		title := TitleStyle.Render("⏰ Chronos - Decimal to Hour Converter")
+		authorSpan := SubtitleStyle.Render("by Nick Conklin • ")
+		githubSpan := LinkStyle.Render("https://github.com/nconklindev/chronos")
+		byLine := lipgloss.JoinHorizontal(lipgloss.Top, authorSpan, githubSpan)
+		header := lipgloss.JoinVertical(lipgloss.Left, title, byLine)
+		subtitle := SubtitleStyle.Render("Select up to 3 files to convert")
+		help := HelpStyle.Render("Space: select file • Enter: confirm selection • Backspace: remove last file • q: quit")
+
+		// Measure actual chrome height for filepicker
+		chromeHeight := lipgloss.Height(header) + lipgloss.Height(subtitle) + lipgloss.Height(help) + 6 // Add spacing
+		height := msg.Height - chromeHeight
 		if height < 5 {
 			height = 5 // Minimum height
 		}
-
 		m.filepicker.SetHeight(height)
 
-		// Update viewport height
-		// Header is approx 7 lines, footer is approx 5 lines + borders/padding
-		// Total chrome is approx 16 lines
-		vpHeight := msg.Height - 16
+		// Update viewport dimensions
+		// Build column selection chrome to measure actual height
+		vpTitle := TitleStyle.Render("⏰ Select Columns to Convert")
+		vpSubtitle := SubtitleStyle.Render(fmt.Sprintf("File (1/1): example.csv")) // Representative text
+		vpHelp := HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit")
+		vpScrollInfo := SubtitleStyle.Render("Viewing 1-10 of 10 columns") // Representative text
+		vpKeepOriginal := "Keep Original Columns: [ ]"
+
+		// Measure viewport chrome height
+		vpChromeHeight := lipgloss.Height(vpTitle) +
+			lipgloss.Height(vpSubtitle) +
+			lipgloss.Height(vpHelp) +
+			lipgloss.Height(vpScrollInfo) +
+			lipgloss.Height(vpKeepOriginal) +
+			8 // Add spacing between elements
+
+		vpHeight := msg.Height - vpChromeHeight
 		if vpHeight < 5 {
 			vpHeight = 5
 		}
-		m.viewport.Width = msg.Width - 4 // Account for padding
+
+		// Calculate viewport width accounting for padding
+		const horizontalPadding = 4
+		vpWidth := msg.Width - horizontalPadding
+		if vpWidth < 10 {
+			vpWidth = 10
+		}
+
+		m.viewport.Width = vpWidth
 		m.viewport.Height = vpHeight
 
 		// If we are in column selection, update content to ensure it fits
@@ -503,14 +533,6 @@ func (m Model) viewColumnSelection() string {
 		s.WriteString(SuccessStyle.Render(fmt.Sprintf("✓ Auto-detected %d decimal hour column(s)", len(config.detectedCols))))
 		s.WriteString("\n\n")
 	}
-
-	visibleHeight := m.height - 20
-	if visibleHeight < 5 {
-		visibleHeight = 5
-	}
-	// Ensure viewport height is set (in case window size msg hasn't happened yet or logic differs)
-	// We rely on Update to set it properly, but for safety we can check here or just use what's there.
-	// The viewport.View() will use its internal height.
 
 	s.WriteString(m.viewport.View())
 	s.WriteString("\n\n")
