@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -46,6 +47,7 @@ type fileConfig struct {
 type Model struct {
 	state      state
 	filepicker filepicker.Model
+	viewport   viewport.Model
 
 	// selectedFiles stores the paths of all files selected by the user.
 	selectedFiles []string
@@ -106,6 +108,7 @@ func InitialModel() Model {
 		selectedFiles: []string{},
 		configs:       []fileConfig{},
 		progress:      prog,
+		viewport:      viewport.New(0, 0),
 	}
 }
 
@@ -128,6 +131,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.filepicker.SetHeight(height)
+
+		// Update viewport height
+		// Header is approx 7 lines, footer is approx 5 lines + borders/padding
+		// Total chrome is approx 16 lines
+		vpHeight := msg.Height - 16
+		if vpHeight < 5 {
+			vpHeight = 5
+		}
+		m.viewport.Width = msg.Width - 4 // Account for padding
+		m.viewport.Height = vpHeight
+
+		// If we are in column selection, update content to ensure it fits
+		if m.state == stateColumnSelection {
+			m.updateViewportContent()
+		}
 
 		return m, nil
 
@@ -183,22 +201,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "k":
 				if config.cursor > 0 {
 					config.cursor--
+					if config.cursor < m.viewport.YOffset {
+						m.viewport.SetYOffset(config.cursor)
+					}
+					m.updateViewportContent()
 				}
 			case "down", "j":
 				if config.cursor < len(config.selectableIndices)-1 {
 					config.cursor++
+					if config.cursor >= m.viewport.YOffset+m.viewport.Height {
+						m.viewport.SetYOffset(config.cursor - m.viewport.Height + 1)
+					}
+					m.updateViewportContent()
 				}
 			case " ":
 				// Toggle selection for the column at the current cursor position
 				colIdx := config.selectableIndices[config.cursor]
 				config.selectedCols[colIdx] = !config.selectedCols[colIdx]
+				m.updateViewportContent()
 			case "o":
 				config.keepOriginal = !config.keepOriginal
+				m.updateViewportContent()
 			case "a":
 				// Select all detected columns
 				for _, idx := range config.detectedCols {
 					config.selectedCols[idx] = true
 				}
+				m.updateViewportContent()
 			case "enter":
 				if len(config.selectedCols) > 0 {
 					// If there are more files to configure, load the next one.
@@ -273,6 +302,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.state = stateColumnSelection
+
+		// Reset viewport scroll and update content
+		m.viewport.SetYOffset(0)
+		m.updateViewportContent()
+
 		return m, nil
 
 	// conversionCompleteMsg is received when a single file conversion finishes.
@@ -470,6 +504,35 @@ func (m Model) viewColumnSelection() string {
 		s.WriteString("\n\n")
 	}
 
+	visibleHeight := m.height - 20
+	if visibleHeight < 5 {
+		visibleHeight = 5
+	}
+	// Ensure viewport height is set (in case window size msg hasn't happened yet or logic differs)
+	// We rely on Update to set it properly, but for safety we can check here or just use what's there.
+	// The viewport.View() will use its internal height.
+
+	s.WriteString(m.viewport.View())
+	s.WriteString("\n\n")
+
+	keepOriginalStatus := "[ ]"
+	if config.keepOriginal {
+		keepOriginalStatus = "[x]"
+	}
+	s.WriteString(fmt.Sprintf("Keep Original Columns: %s\n", keepOriginalStatus))
+	s.WriteString("\n")
+	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit"))
+
+	return BoxStyle.Render(s.String())
+}
+
+func (m *Model) updateViewportContent() {
+	if m.currentFileIndex >= len(m.configs) {
+		return
+	}
+	config := m.configs[m.currentFileIndex]
+	var s strings.Builder
+
 	for i, colIdx := range config.selectableIndices {
 		header := config.fileData.Headers[colIdx]
 		cursor := " "
@@ -504,17 +567,7 @@ func (m Model) viewColumnSelection() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString("\n")
-
-	keepOriginalStatus := "[ ]"
-	if config.keepOriginal {
-		keepOriginalStatus = "[x]"
-	}
-	s.WriteString(fmt.Sprintf("Keep Original Columns: %s\n", keepOriginalStatus))
-	s.WriteString("\n")
-	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit"))
-
-	return BoxStyle.Render(s.String())
+	m.viewport.SetContent(s.String())
 }
 
 func (m Model) viewLoading() string {
