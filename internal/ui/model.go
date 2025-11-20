@@ -217,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = stateLoading
 					return m, m.loadFile(m.selectedFiles[0])
 				}
-			case "backspace", "delete":
+			case "delete":
 				if len(m.selectedFiles) > 0 {
 					m.selectedFiles = m.selectedFiles[:len(m.selectedFiles)-1]
 				}
@@ -506,16 +506,16 @@ func (m Model) viewFilePicker() string {
 		}
 		s.WriteString("\n")
 		if len(m.selectedFiles) < 3 {
-			s.WriteString(SubtitleStyle.Render(fmt.Sprintf("(%d/3 selected) Select more or press 'c' to continue", len(m.selectedFiles))))
+			s.WriteString(SubtitleStyle.Render(fmt.Sprintf("(%d/3 selected) Select more or press 'Enter' to continue", len(m.selectedFiles))))
 		} else {
-			s.WriteString(SuccessStyle.Render("Max files selected. Press 'c' to continue."))
+			s.WriteString(SuccessStyle.Render("Max files selected. Press 'Enter' to continue."))
 		}
 		s.WriteString("\n\n")
 	}
 
 	s.WriteString(m.filepicker.View())
 	s.WriteString("\n\n")
-	s.WriteString(HelpStyle.Render("Space: select file • Enter: confirm selection • Backspace: remove last file • q: quit"))
+	s.WriteString(HelpStyle.Render("Space: select file • Enter: confirm selection • Delete: remove last file • q: quit"))
 
 	return s.String()
 }
