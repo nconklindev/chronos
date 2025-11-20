@@ -144,7 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport dimensions
 		// Build column selection chrome to measure actual height
 		vpTitle := TitleStyle.Render("⏰ Select Columns to Convert")
-		vpSubtitle := SubtitleStyle.Render(fmt.Sprintf("File (1/1): example.csv")) // Representative text
+		vpSubtitle := SubtitleStyle.Render("File (1/1): example.csv") // Representative text
 		vpHelp := HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit")
 		vpScrollInfo := SubtitleStyle.Render("Viewing 1-10 of 10 columns") // Representative text
 		vpKeepOriginal := "Keep Original Columns: [ ]"
