@@ -31,12 +31,6 @@ tar -xzf chronos_Linux_x86_64.tar.gz
 sudo mv chronos /usr/local/bin/
 ```
 
-##### 🍺 Homebrew
-
-```bash
-brew install --cask nconklindev/tap/chronos
-```
-
 #### macOS
 
 ```bash
@@ -49,21 +43,6 @@ sudo mv chronos /usr/local/bin/
 
 ```bash
 brew install --cask nconklindev/tap/chronos
-```
-
-#### Windows
-
-Download `chronos_Windows_x86_64.zip` from the releases page, extract it, and add the executable to your PATH.
-
-### Build from Source
-
-Requires Go 1.21 or higher.
-
-```bash
-git clone https://github.com/nconklindev/chronos.git
-cd chronos
-go build -o chronos
-```
 
 ## 🚀 Usage
 
@@ -75,19 +54,17 @@ chronos
 
 ### Workflow
 
-1. **Select File** - Browse your filesystem and select a CSV or XLSX file
+1. **Select File** - Browse your filesystem and select up to 3 CSV or XLSX files to convert (can include CSV and XLSX in the same batch)
 2. **Choose Columns** - Select which columns contain decimal hours (auto-detected by default)
 3. **Convert** - Press Enter to convert and save the file
-
-> [!NOTE]
-> On reports in XLSX format that have hidden columns or detail rows hidden, the file picker may pick these up and report them as blank with no name, but selectable. This is normal!
 
 ### Keyboard Controls
 
 #### File Picker
 
 - `↑/↓` or `k/j` - Navigate files and directories
-- `Enter` - Select file
+- `Space` - Select file
+- `Enter` - Confirm selection
 - `q` - Quit
 
 #### Column Selection
@@ -95,6 +72,7 @@ chronos
 - `↑/↓` or `k/j` - Navigate columns
 - `Space` - Toggle column selection
 - `a` - Select all auto-detected columns
+- `o` - Toggle keep original file columns
 - `Enter` - Start conversion
 - `q` - Quit
 
@@ -122,23 +100,6 @@ Jane Smith,2025-10-10,07:15,00:30
 - `7.75` → `07:45`
 - `8.983` → `08:59` (rounds to nearest minute)
 - `10.0` → `10:00`
-
-## 🏗️ Architecture
-
-The project follows clean architecture principles with separation of concerns:
-
-```
-chronos/
-├── main.go                    # Application entry point
-├── internal/
-│   ├── types/
-│   │   └── types.go          # Shared data structures
-│   ├── converter/
-│   │   └── converter.go      # Conversion logic
-│   └── ui/
-│       ├── model.go          # Bubble Tea model & logic
-│       └── styles.go         # Lipgloss styling
-```
 
 ## 🛠️ Development
 
@@ -174,6 +135,8 @@ go build -o chronos
 goreleaser build --snapshot --clean
 ```
 
+Using goreleaser is optional, but recommended for building for multiple platforms. See [goreleaser](https://goreleaser.com/) for more information.
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -187,7 +150,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📬 Contact
 
-Nick Conklin - [@nconklindev](https://github.com/nconklindev)
+[@nconklindev](https://github.com/nconklindev)
 
 Project Link: [https://github.com/nconklindev/chronos](https://github.com/nconklindev/chronos)
 
