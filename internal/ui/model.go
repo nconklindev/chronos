@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -46,6 +47,7 @@ type fileConfig struct {
 type Model struct {
 	state      state
 	filepicker filepicker.Model
+	viewport   viewport.Model
 
 	// selectedFiles stores the paths of all files selected by the user.
 	selectedFiles []string
@@ -106,6 +108,7 @@ func InitialModel() Model {
 		selectedFiles: []string{},
 		configs:       []fileConfig{},
 		progress:      prog,
+		viewport:      viewport.New(0, 0),
 	}
 }
 
@@ -121,13 +124,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		// Set filepicker height based on available space
-		// Subtract space for title, subtitle, help text, and padding
-		height := msg.Height - 14
+		// Build the viewport chrome to measure actual height needed
+		title := TitleStyle.Render("⏰ Chronos - Decimal to Hour Converter")
+		authorSpan := SubtitleStyle.Render("by Nick Conklin • ")
+		githubSpan := LinkStyle.Render("https://github.com/nconklindev/chronos")
+		byLine := lipgloss.JoinHorizontal(lipgloss.Top, authorSpan, githubSpan)
+		header := lipgloss.JoinVertical(lipgloss.Left, title, byLine)
+		subtitle := SubtitleStyle.Render("Select up to 3 files to convert")
+		help := HelpStyle.Render("Space: select file • Enter: confirm selection • Backspace: remove last file • q: quit")
+
+		// Measure actual chrome height for filepicker
+		chromeHeight := lipgloss.Height(header) + lipgloss.Height(subtitle) + lipgloss.Height(help) + 6 // Add spacing
+		height := msg.Height - chromeHeight
 		if height < 5 {
 			height = 5 // Minimum height
 		}
-
 		m.filepicker.SetHeight(height)
+
+		// Update viewport dimensions
+		// Build column selection chrome to measure actual height
+		vpTitle := TitleStyle.Render("⏰ Select Columns to Convert")
+		vpSubtitle := SubtitleStyle.Render("File (1/1): example.csv") // Representative text
+		vpHelp := HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit")
+		vpScrollInfo := SubtitleStyle.Render("Viewing 1-10 of 10 columns") // Representative text
+		vpKeepOriginal := "Keep Original Columns: [ ]"
+
+		// Measure viewport chrome height
+		vpChromeHeight := lipgloss.Height(vpTitle) +
+			lipgloss.Height(vpSubtitle) +
+			lipgloss.Height(vpHelp) +
+			lipgloss.Height(vpScrollInfo) +
+			lipgloss.Height(vpKeepOriginal) +
+			8 // Add spacing between elements
+
+		vpHeight := msg.Height - vpChromeHeight
+		if vpHeight < 5 {
+			vpHeight = 5
+		}
+
+		// Calculate viewport width accounting for padding
+		const horizontalPadding = 4
+		vpWidth := msg.Width - horizontalPadding
+		if vpWidth < 10 {
+			vpWidth = 10
+		}
+
+		m.viewport.Width = vpWidth
+		m.viewport.Height = vpHeight
+
+		// If we are in column selection, update content to ensure it fits
+		if m.state == stateColumnSelection {
+			m.updateViewportContent()
+		}
 
 		return m, nil
 
@@ -169,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = stateLoading
 					return m, m.loadFile(m.selectedFiles[0])
 				}
-			case "backspace", "delete":
+			case "delete":
 				if len(m.selectedFiles) > 0 {
 					m.selectedFiles = m.selectedFiles[:len(m.selectedFiles)-1]
 				}
@@ -183,22 +231,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "k":
 				if config.cursor > 0 {
 					config.cursor--
+					if config.cursor < m.viewport.YOffset {
+						m.viewport.SetYOffset(config.cursor)
+					}
+					m.updateViewportContent()
 				}
 			case "down", "j":
 				if config.cursor < len(config.selectableIndices)-1 {
 					config.cursor++
+					if config.cursor >= m.viewport.YOffset+m.viewport.Height {
+						m.viewport.SetYOffset(config.cursor - m.viewport.Height + 1)
+					}
+					m.updateViewportContent()
 				}
 			case " ":
 				// Toggle selection for the column at the current cursor position
 				colIdx := config.selectableIndices[config.cursor]
 				config.selectedCols[colIdx] = !config.selectedCols[colIdx]
+				m.updateViewportContent()
 			case "o":
 				config.keepOriginal = !config.keepOriginal
+				m.updateViewportContent()
 			case "a":
 				// Select all detected columns
 				for _, idx := range config.detectedCols {
 					config.selectedCols[idx] = true
 				}
+				m.updateViewportContent()
 			case "enter":
 				if len(config.selectedCols) > 0 {
 					// If there are more files to configure, load the next one.
@@ -273,6 +332,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.state = stateColumnSelection
+
+		// Reset viewport scroll and update content
+		m.viewport.SetYOffset(0)
+		m.updateViewportContent()
+
 		return m, nil
 
 	// conversionCompleteMsg is received when a single file conversion finishes.
@@ -442,16 +506,16 @@ func (m Model) viewFilePicker() string {
 		}
 		s.WriteString("\n")
 		if len(m.selectedFiles) < 3 {
-			s.WriteString(SubtitleStyle.Render(fmt.Sprintf("(%d/3 selected) Select more or press 'c' to continue", len(m.selectedFiles))))
+			s.WriteString(SubtitleStyle.Render(fmt.Sprintf("(%d/3 selected) Select more or press 'Enter' to continue", len(m.selectedFiles))))
 		} else {
-			s.WriteString(SuccessStyle.Render("Max files selected. Press 'c' to continue."))
+			s.WriteString(SuccessStyle.Render("Max files selected. Press 'Enter' to continue."))
 		}
 		s.WriteString("\n\n")
 	}
 
 	s.WriteString(m.filepicker.View())
 	s.WriteString("\n\n")
-	s.WriteString(HelpStyle.Render("Space: select file • Enter: confirm selection • Backspace: remove last file • q: quit"))
+	s.WriteString(HelpStyle.Render("Space: select file • Enter: confirm selection • Delete: remove last file • q: quit"))
 
 	return s.String()
 }
@@ -469,6 +533,41 @@ func (m Model) viewColumnSelection() string {
 		s.WriteString(SuccessStyle.Render(fmt.Sprintf("✓ Auto-detected %d decimal hour column(s)", len(config.detectedCols))))
 		s.WriteString("\n\n")
 	}
+
+	s.WriteString(m.viewport.View())
+	s.WriteString("\n\n")
+
+	// Show scroll position indicator
+	totalCols := len(config.selectableIndices)
+	visibleStart := m.viewport.YOffset + 1
+	visibleEnd := m.viewport.YOffset + m.viewport.Height
+	if visibleEnd > totalCols {
+		visibleEnd = totalCols
+	}
+	if visibleStart > totalCols {
+		visibleStart = totalCols
+	}
+	scrollInfo := SubtitleStyle.Render(fmt.Sprintf("Viewing %d-%d of %d columns", visibleStart, visibleEnd, totalCols))
+	s.WriteString(scrollInfo)
+	s.WriteString("\n\n")
+
+	keepOriginalStatus := "[ ]"
+	if config.keepOriginal {
+		keepOriginalStatus = "[x]"
+	}
+	s.WriteString(fmt.Sprintf("Keep Original Columns: %s\n", keepOriginalStatus))
+	s.WriteString("\n")
+	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit"))
+
+	return s.String()
+}
+
+func (m *Model) updateViewportContent() {
+	if m.currentFileIndex >= len(m.configs) {
+		return
+	}
+	config := m.configs[m.currentFileIndex]
+	var s strings.Builder
 
 	for i, colIdx := range config.selectableIndices {
 		header := config.fileData.Headers[colIdx]
@@ -504,17 +603,7 @@ func (m Model) viewColumnSelection() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString("\n")
-
-	keepOriginalStatus := "[ ]"
-	if config.keepOriginal {
-		keepOriginalStatus = "[x]"
-	}
-	s.WriteString(fmt.Sprintf("Keep Original Columns: %s\n", keepOriginalStatus))
-	s.WriteString("\n")
-	s.WriteString(HelpStyle.Render("↑/↓: navigate • space: toggle • o: keep original • a: select all detected • enter: confirm • q: quit"))
-
-	return BoxStyle.Render(s.String())
+	m.viewport.SetContent(s.String())
 }
 
 func (m Model) viewLoading() string {
